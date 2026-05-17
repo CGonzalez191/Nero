@@ -1,0 +1,9 @@
+__pycache__/
+*.pyc
+*.pyo
+modelos/
+cache.json
+.env
+*.egg-info/
+dist/
+build/

@@ -1,0 +1,9 @@
+vosk
+pyttsx3
+sounddevice
+numpy
+pycaw
+comtypes
+pillow
+pyautogui
+SpeechRecognition
