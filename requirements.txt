@@ -7,3 +7,7 @@ comtypes
 pillow
 pyautogui
 SpeechRecognition
+PyQt5
+PyQtWebEngine
+websockets
+keyboard
