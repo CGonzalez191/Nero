@@ -6,6 +6,9 @@ import subprocess
 import re
 import ctypes
 import string
+import atexit
+import unicodedata
+import time as time_module
 
 CACHE_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "cache.json")
 
@@ -48,6 +51,30 @@ def _guardar_cache(cache):
         print(f"[Error cache] {e}")
 
 
+# --- Write-back cache manager ---
+
+_cache_data = None
+_cache_dirty = False
+
+def _get_cache():
+    global _cache_data
+    if _cache_data is None:
+        _cache_data = _cargar_cache()
+    return _cache_data
+
+def _mark_dirty():
+    global _cache_dirty
+    _cache_dirty = True
+
+def _flush_cache():
+    global _cache_dirty, _cache_data
+    if _cache_dirty and _cache_data is not None:
+        _guardar_cache(_cache_data)
+        _cache_dirty = False
+
+atexit.register(_flush_cache)
+
+
 # --- App search strategies ---
 
 _PALABRAS_EXCLUIR = {"desinstalar", "uninstall", "uninst", "remove", "eliminar"}
@@ -63,7 +90,7 @@ _INDEX_STEAM_GAMES = {}
 _INDEX_READY = False
 
 
-def _indexar_todo():
+def _indexar_start_menu():
     global _INDEX_READY
     if _INDEX_READY:
         return
@@ -78,24 +105,11 @@ def _indexar_todo():
                     if ruta not in vistos:
                         vistos.add(ruta)
                         _INDEX_START_MENU.append(ruta)
-    for lib in _obtener_librerias_steam():
-        if not os.path.exists(lib):
-            continue
-        for manifest in glob.glob(os.path.join(lib, "appmanifest_*.acf")):
-            try:
-                with open(manifest, "r", encoding="utf-8") as f:
-                    c = f.read()
-                name = re.search(r'"name"\s+"(.+?)"', c)
-                appid = re.search(r'"appid"\s+"(\d+)"', c)
-                if name and appid:
-                    _INDEX_STEAM_GAMES[name.group(1)] = appid.group(1)
-            except Exception:
-                continue
     _INDEX_READY = True
 
 
 def _buscar_en_start_menu(nombre):
-    _indexar_todo()
+    _indexar_start_menu()
     nombre_lower = nombre.lower()
     fallback = None
     for lnk in _INDEX_START_MENU:
@@ -162,17 +176,20 @@ def _buscar_en_program_files(nombre):
             base = os.path.join(unidad, carpeta)
             if not os.path.exists(base):
                 continue
-            for root, dirs, files in os.walk(base):
-                depth = root.replace(base, "").rstrip("\\").count(os.sep)
-                if depth > 4:
-                    dirs.clear()
-                    continue
-                for f in files:
-                    if f.lower().endswith((".exe", ".lnk")) and nombre_lower in os.path.splitext(f)[0].lower():
-                        if _es_lanzador(f):
-                            return os.path.join(root, f)
-                        if fallback is None:
-                            fallback = os.path.join(root, f)
+            try:
+                for root, dirs, files in os.walk(base):
+                    depth = root.replace(base, "").rstrip("\\").count(os.sep)
+                    if depth > 3:
+                        dirs.clear()
+                        continue
+                    for f in files:
+                        if f.lower().endswith((".exe", ".lnk")) and nombre_lower in os.path.splitext(f)[0].lower():
+                            if _es_lanzador(f):
+                                return os.path.join(root, f)
+                            if fallback is None:
+                                fallback = os.path.join(root, f)
+            except PermissionError:
+                continue
     return fallback
 
 
@@ -213,9 +230,25 @@ def _buscar_en_todas_las_unidades(nombre):
             base = os.path.join(unidad, carpeta)
             if not os.path.exists(base):
                 continue
-            for root, dirs, files in os.walk(base):
-                depth = root.replace(base, "").rstrip("\\").count(os.sep)
-                if depth > 5:
+            try:
+                for root, dirs, files in os.walk(base):
+                    depth = root.replace(base, "").rstrip("\\").count(os.sep)
+                    if depth > 4:
+                        dirs.clear()
+                        continue
+                    for f in files:
+                        if f.lower().endswith((".exe", ".lnk")) and nombre_lower in os.path.splitext(f)[0].lower():
+                            if _es_lanzador(f):
+                                return os.path.join(root, f)
+                            if fallback is None:
+                                fallback = os.path.join(root, f)
+            except PermissionError:
+                continue
+    for unidad in UNIDADES:
+        try:
+            for root, dirs, files in os.walk(unidad):
+                depth = root.replace(unidad, "").rstrip("\\").count(os.sep)
+                if depth > 2:
                     dirs.clear()
                     continue
                 for f in files:
@@ -224,18 +257,8 @@ def _buscar_en_todas_las_unidades(nombre):
                             return os.path.join(root, f)
                         if fallback is None:
                             fallback = os.path.join(root, f)
-    for unidad in UNIDADES:
-        for root, dirs, files in os.walk(unidad):
-            depth = root.replace(unidad, "").rstrip("\\").count(os.sep)
-            if depth > 3:
-                dirs.clear()
-                continue
-            for f in files:
-                if f.lower().endswith((".exe", ".lnk")) and nombre_lower in os.path.splitext(f)[0].lower():
-                    if _es_lanzador(f):
-                        return os.path.join(root, f)
-                    if fallback is None:
-                        fallback = os.path.join(root, f)
+        except PermissionError:
+            continue
     return fallback
 
 
@@ -255,18 +278,47 @@ def _obtener_librerias_steam():
     return librerias
 
 
+STEAM_CACHE_TTL = 3600  # 1 hour
+
+
 def _indexar_juegos_steam(forzar=False):
-    _indexar_todo()
+    # Try cache first
+    if not forzar:
+        cache = _get_cache()
+        steam_games = cache.get("steam_games", {})
+        steam_ts = cache.get("steam_ts", 0)
+        now = time_module.time()
+        if steam_games and (now - steam_ts) < STEAM_CACHE_TTL:
+            _INDEX_STEAM_GAMES.clear()
+            _INDEX_STEAM_GAMES.update(steam_games)
+            return _INDEX_STEAM_GAMES
+
+    # Walk Steam libraries
+    _INDEX_STEAM_GAMES.clear()
+    for lib in _obtener_librerias_steam():
+        if not os.path.exists(lib):
+            continue
+        for manifest in glob.glob(os.path.join(lib, "appmanifest_*.acf")):
+            try:
+                with open(manifest, "r", encoding="utf-8") as f:
+                    c = f.read()
+                name = re.search(r'"name"\s+"(.+?)"', c)
+                appid = re.search(r'"appid"\s+"(\d+)"', c)
+                if name and appid:
+                    _INDEX_STEAM_GAMES[name.group(1)] = appid.group(1)
+            except Exception:
+                continue
+
     if _INDEX_STEAM_GAMES:
-        cache = _cargar_cache()
-        cache["steam_games"] = _INDEX_STEAM_GAMES
-        cache["steam_ts"] = __import__("time").time()
-        _guardar_cache(cache)
+        cache = _get_cache()
+        cache["steam_games"] = dict(_INDEX_STEAM_GAMES)
+        cache["steam_ts"] = time_module.time()
+        _mark_dirty()
+
     return _INDEX_STEAM_GAMES
 
 
 def _normalizar(s):
-    import unicodedata
     s = unicodedata.normalize("NFKD", s.lower())
     s = "".join(c for c in s if not unicodedata.combining(c))
     return re.sub(r"[^a-z0-9\s]", "", s).strip()
@@ -324,12 +376,147 @@ def abrir_juego_steam(nombre):
     return None
 
 
+# --- Instalar juegos de Steam ---
+
+def _buscar_appid_steam(nombre):
+    import urllib.request
+    import urllib.parse
+    import re
+
+    url = f"https://store.steampowered.com/search/suggest?term={urllib.parse.quote(nombre.strip().lower())}&f=games&cc=US&l=spanish"
+    try:
+        req = urllib.request.Request(url, headers={"User-Agent": "Nero/1.0"})
+        with urllib.request.urlopen(req, timeout=10) as r:
+            html = r.read().decode("utf-8")
+
+        mejor = (0, None, None)
+        for a in re.finditer(r"""data-ds-appid=["'](\d+)["'].*?class=["']match_name["']>([^<]+)<""", html, re.DOTALL):
+            appid = a.group(1)
+            nombre_api = a.group(2)
+            if not appid:
+                continue
+            score = _puntuar_coincidencia(_normalizar(nombre), nombre_api)
+            if score > mejor[0]:
+                mejor = (score, appid, nombre_api)
+
+        _, appid, nombre_api = mejor
+        if appid:
+            return appid, nombre_api
+    except Exception as e:
+        print(f"[Error Steam API] {e}")
+    return None, None
+
+
+def instalar_juego_steam(nombre):
+    appid, nombre_api = _buscar_appid_steam(nombre)
+    if not appid:
+        return None
+    try:
+        subprocess.Popen(f'start steam://install/{appid}', shell=True)
+        return f"Abriendo Steam para instalar {nombre_api}"
+    except Exception as e:
+        return f"Error al abrir Steam: {e}"
+
+
+# --- Epic Games ---
+
+EPIC_MANIFESTS_PATH = os.path.expandvars(
+    r"%ProgramData%\Epic\EpicGamesLauncher\Data\Manifests"
+)
+
+_INDEX_EPIC_GAMES = None
+
+
+def _indexar_juegos_epic(forzar=False):
+    global _INDEX_EPIC_GAMES
+
+    if not forzar and _INDEX_EPIC_GAMES is not None:
+        return _INDEX_EPIC_GAMES
+
+    if not forzar:
+        cache = _get_cache()
+        epic = cache.get("epic_games", {})
+        if epic:
+            _INDEX_EPIC_GAMES = epic
+            return _INDEX_EPIC_GAMES
+
+    juegos = {}
+    if os.path.exists(EPIC_MANIFESTS_PATH):
+        for item_file in glob.glob(os.path.join(EPIC_MANIFESTS_PATH, "*.item")):
+            try:
+                with open(item_file, "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                display_name = data.get("DisplayName", "")
+                install_loc = data.get("InstallLocation", "")
+                executable = data.get("LaunchExecutable", "")
+                app_name = data.get("AppName", "")
+                if display_name and install_loc and executable:
+                    juegos[display_name] = {
+                        "install_location": install_loc,
+                        "launch_executable": executable,
+                        "app_name": app_name,
+                    }
+            except Exception:
+                continue
+
+    _INDEX_EPIC_GAMES = juegos
+    cache = _get_cache()
+    cache["epic_games"] = juegos
+    _mark_dirty()
+    return _INDEX_EPIC_GAMES
+
+
+def abrir_juego_epic(nombre):
+    nombre_normal = _normalizar(nombre)
+    if not nombre_normal:
+        return None
+
+    juegos = _indexar_juegos_epic()
+    if not juegos:
+        return None
+
+    def _buscar(juegos):
+        mejor = (0, None, None)
+        for game_name, info in juegos.items():
+            score = _puntuar_coincidencia(nombre_normal, game_name)
+            if score > mejor[0]:
+                mejor = (score, game_name, info)
+        return mejor
+
+    score, game_name, info = _buscar(juegos)
+
+    if score >= 30 and game_name and info:
+        # Launch via Epic Launcher protocol (handles DRM/auth)
+        app_name = info.get("app_name", "")
+        if app_name:
+            try:
+                subprocess.Popen(
+                    f'start "" "com.epicgames.launcher://apps/{app_name}?action=launch&silent=true"',
+                    shell=True
+                )
+                return f"Abriendo {game_name}"
+            except Exception:
+                pass
+
+        # Fallback: launch executable directly
+        ruta = os.path.join(info["install_location"], info["launch_executable"])
+        if os.path.exists(ruta):
+            try:
+                subprocess.Popen([ruta], cwd=info["install_location"])
+                return f"Abriendo {game_name}"
+            except Exception as e:
+                return f"Error al abrir {game_name}: {e}"
+        return f"No encontré el ejecutable de {game_name}"
+
+    return None
+
+
 # --- Main app opener ---
 
 def abrir_aplicacion(nombre):
     nombre = nombre.strip().lower()
 
-    cache = _cargar_cache()
+    cache = _get_cache()
     if nombre in cache.get("apps", {}):
         ruta = cache["apps"][nombre]
         try:
@@ -347,6 +534,7 @@ def abrir_aplicacion(nombre):
 
     buscadores = [
         ("Steam", lambda n: abrir_juego_steam(n) or None),
+        ("Epic", lambda n: abrir_juego_epic(n) or None),
         ("Registro", _buscar_en_registro),
         ("Start Menu", _buscar_en_start_menu),
         ("PATH", _buscar_en_path),
@@ -357,7 +545,7 @@ def abrir_aplicacion(nombre):
     ]
 
     for nombre_buscador, buscador in buscadores:
-        if nombre_buscador == "Steam":
+        if nombre_buscador in ("Steam", "Epic"):
             resultado = buscador(nombre)
             if resultado:
                 return resultado
@@ -373,7 +561,7 @@ def abrir_aplicacion(nombre):
                 continue
 
         cache["apps"][nombre] = ruta
-        _guardar_cache(cache)
+        _mark_dirty()
         try:
             os.startfile(ruta)
             return f"Abrí {nombre}"
@@ -388,21 +576,24 @@ def abrir_aplicacion(nombre):
 def _buscar_carpeta_en_unidades(nombre):
     nombre_lower = nombre.lower()
     for unidad in UNIDADES:
-        for root, dirs, _ in os.walk(unidad):
-            depth = root.replace(unidad, "").rstrip("\\").count(os.sep)
-            if depth > 2:
-                dirs.clear()
-                continue
-            for d in dirs:
-                if d.lower() == nombre_lower:
-                    return os.path.join(root, d)
+        try:
+            for root, dirs, _ in os.walk(unidad):
+                depth = root.replace(unidad, "").rstrip("\\").count(os.sep)
+                if depth > 2:
+                    dirs.clear()
+                    continue
+                for d in dirs:
+                    if d.lower() == nombre_lower:
+                        return os.path.join(root, d)
+        except PermissionError:
+            continue
     return None
 
 
 def abrir_carpeta(nombre):
     nombre = nombre.strip().lower()
 
-    cache = _cargar_cache()
+    cache = _get_cache()
     if nombre in cache.get("folders", {}):
         ruta = cache["folders"][nombre]
         try:
@@ -425,14 +616,14 @@ def abrir_carpeta(nombre):
                 if d.lower() == nombre:
                     ruta = os.path.join(root, d)
                     cache["folders"][nombre] = ruta
-                    _guardar_cache(cache)
+                    _mark_dirty()
                     os.startfile(ruta)
                     return f"Abrí la carpeta {nombre}"
 
     ruta = _buscar_carpeta_en_unidades(nombre)
     if ruta:
         cache["folders"][nombre] = ruta
-        _guardar_cache(cache)
+        _mark_dirty()
         os.startfile(ruta)
         return f"Abrí la carpeta {nombre}"
 

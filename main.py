@@ -5,14 +5,13 @@ import os
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 from voice import hablar, escuchar
-from commands.apps import abrir_aplicacion, abrir_carpeta
+from commands.apps import abrir_aplicacion, abrir_carpeta, instalar_juego_steam
 from commands.files import crear_archivo, crear_carpeta, leer_archivo
-from commands.browser import abrir_sitio, buscar_google, SITIOS
+from commands.browser import abrir_sitio, buscar_en_web, SITIOS
 from commands.system import (
     cambiar_volumen, decir_hora, decir_fecha,
     tomar_captura, cancelar_apagado,
 )
-
 EXIT_COMMANDS = ["salir", "adiós", "adios", "chao", "termina"]
 
 
@@ -49,10 +48,37 @@ def procesar_comando(texto):
     if re.search(r"toma\s+una\s+captura", t) or re.search(r"saca\s+una\s+foto", t) or "captura de pantalla" in t:
         return tomar_captura()
 
-    # --- Buscar en Google ---
-    match = re.search(r"busca\s+en\s+google\s+(.+)", t)
+    # --- Buscar en web con motor explícito ---
+    match = re.search(r"busca\s+en\s+(\w+)\s+(.+)", t)
     if match:
-        return buscar_google(match.group(1).strip())
+        return buscar_en_web(match.group(2).strip(), match.group(1))
+
+    # --- Búsquedas semánticas (motor por defecto) ---
+    match = re.search(r"(?:qué|que)\s+(?:es|significa)\s+(.+)", t)
+    if match:
+        return buscar_en_web(match.group(1).strip())
+
+    match = re.search(r"(?:dime|cuéntame|cuentame|háblame|hablame|decime)\s+(?:sobre|de)\s+(.+)", t)
+    if match:
+        return buscar_en_web(match.group(1).strip())
+
+    match = re.search(r"explica(?:me)?\s+(.+)", t)
+    if match:
+        return buscar_en_web(match.group(1).strip())
+
+    match = re.search(r"investiga\s+(.+)", t)
+    if match:
+        return buscar_en_web(match.group(1).strip())
+
+    # --- "busca X" sin motor (usa default) ---
+    match = re.search(r"busca\s+(.+)", t)
+    if match:
+        return buscar_en_web(match.group(1).strip())
+
+    # --- Instalar en Steam ---
+    match = re.search(r"(?:instala|instalar)\s+(.+?)\s+en\s+steam", t)
+    if match:
+        return instalar_juego_steam(match.group(1).strip())
 
     # --- Leer archivo ---
     match = re.search(r"(lee|leé)\s+(el\s+)?archivo\s+(.+)", t)

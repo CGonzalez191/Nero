@@ -1,4 +1,15 @@
+import urllib.parse
 import webbrowser
+
+from config import BUSCADOR
+
+MOTORES = {
+    "google": "https://www.google.com/search?q={}",
+    "duckduckgo": "https://duckduckgo.com/?q={}",
+    "bing": "https://www.bing.com/search?q={}",
+    "brave": "https://search.brave.com/search?q={}",
+    "startpage": "https://www.startpage.com/do/dsearch?query={}",
+}
 
 SITIOS = {
     "youtube": "https://www.youtube.com",
@@ -30,7 +41,15 @@ def abrir_sitio(nombre):
     return None
 
 
-def buscar_google(consulta):
-    url = f"https://www.google.com/search?q={consulta.replace(' ', '+')}"
+def buscar_en_web(consulta, motor=None):
+    if not motor:
+        motor = BUSCADOR.get("motor", "duckduckgo")
+    motor = motor.lower().strip()
+    plantilla = MOTORES.get(motor)
+    if not plantilla:
+        motor = "duckduckgo"
+        plantilla = MOTORES[motor]
+    url = plantilla.format(urllib.parse.quote(consulta))
     webbrowser.open(url)
-    return f"Busqué {consulta} en Google"
+    nombre_motor = motor.capitalize()
+    return f"Busqué {consulta} en {nombre_motor}"

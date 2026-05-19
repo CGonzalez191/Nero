@@ -13,25 +13,28 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
 # --- TTS ---
 _engine = None
+_engine_lock = threading.Lock()
 
 def _get_engine():
     global _engine
     if _engine is None:
-        _engine = pyttsx3.init()
-        voz_encontrada = False
-        for voz in _engine.getProperty('voices'):
-            langs = voz.languages if voz.languages else []
-            nombre = voz.name or ""
-            if 'spanish' in nombre.lower() or any('es' in l.lower() for l in langs if l):
-                _engine.setProperty('voice', voz.id)
-                voz_encontrada = True
-                break
-        if not voz_encontrada:
-            voices = _engine.getProperty('voices')
-            if voices:
-                _engine.setProperty('voice', voices[0].id)
-        _engine.setProperty('rate', VOZ_VELOCIDAD)
-        _engine.setProperty('volume', VOZ_VOLUMEN)
+        with _engine_lock:
+            if _engine is None:
+                _engine = pyttsx3.init()
+                voz_encontrada = False
+                for voz in _engine.getProperty('voices'):
+                    langs = voz.languages if voz.languages else []
+                    nombre = voz.name or ""
+                    if 'spanish' in nombre.lower() or any('es' in l.lower() for l in langs if l):
+                        _engine.setProperty('voice', voz.id)
+                        voz_encontrada = True
+                        break
+                if not voz_encontrada:
+                    voices = _engine.getProperty('voices')
+                    if voices:
+                        _engine.setProperty('voice', voices[0].id)
+                _engine.setProperty('rate', VOZ_VELOCIDAD)
+                _engine.setProperty('volume', VOZ_VOLUMEN)
     return _engine
 
 
@@ -46,8 +49,10 @@ def hablar(texto):
 
 # --- STT ---
 RATE = 16000
+_recognizer = sr.Recognizer()
 
 def escuchar():
+    raw_bytes = b""
     try:
         audio_queue = queue.Queue()
 
@@ -114,8 +119,7 @@ def escuchar():
 
         audio_data = sr.AudioData(raw_bytes, RATE, 2)
 
-        r = sr.Recognizer()
-        text = r.recognize_google(audio_data, language=STT_IDIOMA)
+        text = _recognizer.recognize_google(audio_data, language=STT_IDIOMA)
         return text.lower().strip()
 
     except sr.UnknownValueError:
