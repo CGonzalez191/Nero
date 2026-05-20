@@ -11,6 +11,7 @@ from commands.browser import abrir_sitio, buscar_en_web, SITIOS
 from commands.system import (
     cambiar_volumen, decir_hora, decir_fecha,
     tomar_captura, cancelar_apagado,
+    cerrar_aplicacion, cerrar_ventana_activa,
 )
 EXIT_COMMANDS = ["salir", "adiós", "adios", "chao", "termina"]
 
@@ -94,6 +95,16 @@ def procesar_comando(texto):
     match = re.search(r"crea\s+un\s+archivo\s+llamado\s+(.+)", t)
     if match:
         return crear_archivo(match.group(1).strip())
+
+    # --- Cerrar aplicación ---
+    match = re.search(r"(?:cierra|cerrá|cerrar)\s+(.+)", t)
+    if match:
+        query = match.group(1).strip().lower()
+        if query in ("la ventana", "ventana", "esta ventana", "la pestaña", "pestaña"):
+            return cerrar_ventana_activa()
+        if query in ("todo", "todo"):
+            return "No voy a cerrar todo por si acaso"
+        return cerrar_aplicacion(query)
 
     # --- Abrir carpeta (antes que "abre" genérico) ---
     match = re.search(r"(?:abre|abrí|abrir)\s+(?:la\s+)?carpeta\s+(.+)", t)

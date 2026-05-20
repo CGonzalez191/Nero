@@ -23,11 +23,13 @@
   }
 
   html, body {
-    width: 100%; height: 100%; overflow-x: hidden;
+    width: 100%; height: 100%; overflow: hidden;
     background: var(--blue-deep);
     font-family: 'Inter', sans-serif;
     color: var(--text-primary);
   }
+
+  ::-webkit-scrollbar { display: none; }
 
   nav {
     position: fixed; top: 0; left: 0; right: 0; z-index: 100;
@@ -58,18 +60,12 @@
   .btn-ghost:hover { background: rgba(96,165,250,.1); color: var(--text-primary); }
 
   #wsBadge {
-    font-size: 11px; padding: 4px 12px; border-radius: 100px;
-    border: .5px solid rgba(96,165,250,.3);
-    display: flex; align-items: center; gap: 6px;
-    transition: all .4s;
+    width: 10px; height: 10px; border-radius: 2px;
+    transition: background .4s;
   }
-  #wsBadge .bdot { width: 6px; height: 6px; border-radius: 50%; transition: background .4s; }
-  #wsBadge.disconnected { color: var(--text-muted); background: rgba(10,31,61,.4); }
-  #wsBadge.disconnected .bdot { background: var(--red); }
-  #wsBadge.connecting  { color: var(--amber); background: rgba(245,158,11,.08); }
-  #wsBadge.connecting  .bdot { background: var(--amber); animation: dotpulse 1s infinite; }
-  #wsBadge.connected   { color: var(--green); background: rgba(29,158,117,.1); }
-  #wsBadge.connected   .bdot { background: var(--green); animation: dotpulse 1.5s infinite; }
+  #wsBadge.disconnected { background: var(--red); }
+  #wsBadge.connecting   { background: var(--amber); animation: dotpulse .8s infinite; }
+  #wsBadge.connected    { background: var(--green); animation: dotpulse 1.5s infinite; }
 
   .hero {
     min-height: 100vh;
@@ -157,9 +153,6 @@
     transition: background .3s;
     min-width: 200px; justify-content: center;
   }
-  .speak-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--blue-vivid); }
-  .speak-dot.pulse { animation: dotpulse 1.2s infinite; }
-
   .panel {
     position: relative; z-index: 5;
     background: rgba(10,31,61,.55);
@@ -174,20 +167,17 @@
   }
   .panel-title { font-size: 12px; font-weight: 500; color: var(--text-muted); letter-spacing: .06em; text-transform: uppercase; }
   .status-pill {
-    font-size: 11px; padding: 3px 10px; border-radius: 100px;
-    background: rgba(26,74,255,.2); color: var(--blue-light);
-    border: .5px solid rgba(96,165,250,.3);
-    display: flex; align-items: center; gap: 5px;
-    transition: all .3s;
+    width: 10px; height: 10px; border-radius: 2px;
+    transition: background .3s;
   }
-  .status-pill .dot { width: 5px; height: 5px; border-radius: 50%; background: var(--green); }
-  .status-pill.listening .dot { background: var(--blue-vivid); animation: dotpulse 1s infinite; }
-  .status-pill.thinking  .dot { background: var(--amber);      animation: dotpulse .7s infinite; }
-  .status-pill.error     .dot { background: var(--red); }
+  .status-pill          { background: var(--green); }
+  .status-pill.listening { background: var(--blue-vivid); animation: dotpulse .8s infinite; }
+  .status-pill.thinking  { background: var(--amber);      animation: dotpulse .5s infinite; }
+  .status-pill.error     { background: var(--red); }
 
   .log {
     display: flex; flex-direction: column; gap: 10px;
-    min-height: 70px; max-height: 200px;
+    min-height: 40px; max-height: 110px;
     overflow-y: auto; padding-right: 4px;
     scrollbar-width: thin; scrollbar-color: rgba(96,165,250,.2) transparent;
   }
@@ -218,21 +208,6 @@
     display: inline-block;
   }
 
-  .cmds {
-    display: flex; flex-wrap: wrap; gap: 7px;
-    margin-top: 16px; padding-top: 16px;
-    border-top: .5px solid rgba(96,165,250,.1);
-  }
-  .cmd-chip {
-    font-size: 12px; padding: 6px 13px; border-radius: 100px;
-    background: rgba(10,31,61,.7); border: .5px solid rgba(96,165,250,.2);
-    color: var(--text-muted); cursor: default;
-    display: flex; align-items: center; gap: 6px;
-    transition: all .2s;
-    user-select: none;
-  }
-  .cmd-chip svg { width: 13px; height: 13px; }
-
   @keyframes dotpulse {
     0%,100%{opacity:1} 50%{opacity:.3}
   }
@@ -261,11 +236,7 @@
     Nero
   </div>
   <div class="nav-actions">
-    <button class="btn-ghost" onclick="showCmds()">Comandos</button>
-    <div id="wsBadge" class="disconnected">
-      <div class="bdot"></div>
-      <span id="wsLabel">Desconectado</span>
-    </div>
+    <div id="wsBadge" class="disconnected"></div>
   </div>
 </nav>
 
@@ -275,7 +246,7 @@
   <div class="bg-layer bg-layer-3"></div>
 
   <h1 class="hero-title" style="order:1">Habla con <span class="accent">Nero</span></h1>
-  <p class="hero-sub" style="order:2">Tu asistente de voz para controlar todo en tu PC</p>
+  <p class="hero-sub" style="order:2">Tu asistente de voz </p>
 
   <canvas id="sphere" width="280" height="280" style="order:3"></canvas>
 
@@ -289,19 +260,16 @@
         </svg>
       </button>
     </div>
+     <div style="height: 16px"></div>
     <div class="speak-label">
-      <div class="speak-dot" id="speakDot"></div>
       <span id="speakLabel">Presiona Ctrl+Shift+N para hablar</span>
     </div>
   </div>
 
-  <div class="panel" style="order:5">
+  <div class="panel" style="order:4">
     <div class="panel-header">
       <span class="panel-title">Actividad</span>
-      <div class="status-pill" id="statusPill">
-        <div class="dot"></div>
-        <span id="statusText">En espera</span>
-      </div>
+      <div class="status-pill" id="statusPill"></div>
     </div>
 
     <div class="log" id="log">
@@ -314,22 +282,7 @@
       </div>
     </div>
 
-    <div class="waveform" id="waveform">
-      <span id="w1"></span><span id="w2"></span><span id="w3"></span>
-      <span id="w4"></span><span id="w5"></span><span id="w6"></span>
-      <span id="w7"></span><span id="w8"></span>
-    </div>
-
-    <div class="cmds">
-      <div class="cmd-chip">
-        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 2a10 10 0 1 0 0 20A10 10 0 0 0 12 2zm1 15h-2v-6h2v6zm0-8h-2V7h2v2z"/></svg>
-        Di un comando de voz
-      </div>
-      <div class="cmd-chip">
-        <svg viewBox="0 0 24 24" fill="currentColor"><path d="M12 1a4 4 0 0 1 4 4v6a4 4 0 0 1-8 0V5a4 4 0 0 1 4-4z"/></svg>
-        Python controla el mic
-      </div>
-    </div>
+    
   </div>
 </section>
 
@@ -446,8 +399,8 @@ function addLog(type, name, text, isError = false) {
       <div class="log-name">${name}</div>
       <div class="log-text${isError ? ' err' : ''}">${text}</div>
     </div>`;
+  log.innerHTML = '';
   log.appendChild(row);
-  log.scrollTop = log.scrollHeight;
 }
 
 /* ─── UI STATE ─── */
@@ -455,20 +408,16 @@ function setUIState(state, label) {
   const pill    = document.getElementById('statusPill');
   const micBtn  = document.getElementById('micBtn');
   const speakLb = document.getElementById('speakLabel');
-  const speakDt = document.getElementById('speakDot');
 
   pill.className    = 'status-pill ' + state;
   micBtn.className  = 'mic-btn ' + state;
   sphereMode        = state;
 
-  document.getElementById('statusText').textContent = label;
   speakLb.textContent = label;
 
   if (state === 'listening') {
-    speakDt.classList.add('pulse');
     startWave();
   } else {
-    speakDt.classList.remove('pulse');
     if (state !== 'thinking') stopWave();
   }
 }
@@ -479,17 +428,17 @@ let ws       = null;
 let reconnectTimer = null;
 
 function connect() {
-  setBadge('connecting', 'Conectando...');
+  setBadge('connecting');
   try {
     ws = new WebSocket(WS_URL);
   } catch(e) {
-    setBadge('disconnected', 'Desconectado');
+    setBadge('disconnected');
     scheduleReconnect();
     return;
   }
 
   ws.onopen = () => {
-    setBadge('connected', 'Conectado');
+    setBadge('connected');
     clearTimeout(reconnectTimer);
   };
 
@@ -500,7 +449,7 @@ function connect() {
   };
 
   ws.onclose = ws.onerror = () => {
-    setBadge('disconnected', 'Desconectado');
+    setBadge('disconnected');
     setUIState('', 'Esperando a Nero...');
     stopWave();
     scheduleReconnect();
@@ -512,10 +461,8 @@ function scheduleReconnect() {
   reconnectTimer = setTimeout(connect, 3000);
 }
 
-function setBadge(cls, txt) {
-  const b = document.getElementById('wsBadge');
-  b.className = cls;
-  document.getElementById('wsLabel').textContent = txt;
+function setBadge(cls) {
+  document.getElementById('wsBadge').className = cls;
 }
 
 /* ─── EVENT HANDLER ─── */

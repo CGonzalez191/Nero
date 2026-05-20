@@ -72,4 +72,94 @@ def cancelar_apagado():
         return "No hay un apagado pendiente"
 
 
+_PROCESOS_CRITICOS = {
+    "winlogon.exe", "csrss.exe", "services.exe", "lsass.exe",
+    "svchost.exe", "smss.exe", "wininit.exe", "system",
+    "system idle process", "spoolsv.exe", "taskmgr.exe",
+}
+
+_EXE_CONOCIDOS = {
+    "chrome": "chrome.exe", "firefox": "firefox.exe", "edge": "msedge.exe",
+    "spotify": "Spotify.exe", "discord": "Discord.exe", "steam": "steam.exe",
+    "notepad": "notepad.exe", "bloc de notas": "notepad.exe",
+    "word": "WINWORD.EXE", "excel": "EXCEL.EXE", "powerpoint": "POWERPNT.EXE",
+    "code": "Code.exe", "vscode": "Code.exe", "visual studio code": "Code.exe",
+    "explorer": "explorer.exe", "explorador": "explorer.exe",
+    "calculadora": "Calculator.exe", "cmd": "cmd.exe",
+    "terminal": "WindowsTerminal.exe", "powershell": "powershell.exe",
+    "powershell ise": "powershell_ise.exe",
+    "outlook": "OUTLOOK.EXE", "telegram": "Telegram.exe",
+    "whatsapp": "WhatsApp.exe", "slack": "Slack.exe",
+    "notion": "Notion.exe", "obsidian": "Obsidian.exe",
+    "brave": "brave.exe", "opera": "opera.exe", "safari": "safari.exe",
+    "vlc": "vlc.exe", "mpc": "mpc-hc64.exe",
+    "7zip": "7zFM.exe", "winrar": "WinRAR.exe",
+    "photoshop": "Photoshop.exe", "illustrator": "Illustrator.exe",
+    "figma": "Figma.exe", "blender": "blender.exe",
+    "unity": "Unity.exe", "unreal": "UnrealEditor.exe",
+    "goland": "goland64.exe", "pycharm": "pycharm64.exe",
+    "intellij": "idea64.exe", "webstorm": "webstorm64.exe",
+    "android studio": "studio64.exe", "xampp": "xampp-control.exe",
+    "docker": "Docker Desktop.exe", "postman": "Postman.exe",
+    "mysql": "mysql.exe", "mongodb": "mongod.exe",
+    "github desktop": "GitHubDesktop.exe", "sourcetree": "SourceTree.exe",
+    "filezilla": "filezilla.exe", "putty": "putty.exe",
+    "obs": "obs64.exe", "audacity": "audacity.exe",
+    "calibre": "calibre.exe", "foxit": "FoxitReader.exe",
+    "adobe acrobat": "Acrobat.exe", "acrobat": "Acrobat.exe",
+    "teamviewer": "TeamViewer.exe", "anydesk": "AnyDesk.exe",
+    "nvidia": "nvidia-smi.exe", "geforce": "GeForceExperience.exe",
+    "cortana": "Cortana.exe", "skype": "Skype.exe",
+}
+
+
+def _buscar_exe_por_nombre(nombre):
+    nombre = nombre.lower().strip()
+    if nombre in _EXE_CONOCIDOS:
+        return _EXE_CONOCIDOS[nombre]
+    try:
+        result = subprocess.run(
+            ["tasklist", "/fo", "csv", "/nh"],
+            capture_output=True, text=True, creationflags=subprocess.CREATE_NO_WINDOW
+        )
+        for line in result.stdout.strip().split("\n"):
+            if not line:
+                continue
+            parts = line.split(",")
+            if parts:
+                exe = parts[0].strip('"').strip()
+                if nombre in exe.lower().replace(".exe", ""):
+                    return exe
+    except Exception:
+        pass
+    return None
+
+
+def cerrar_aplicacion(nombre):
+    exe = _buscar_exe_por_nombre(nombre)
+    if not exe:
+        return f"No encontré {nombre} ejecutándose"
+    if exe.lower() in _PROCESOS_CRITICOS:
+        return f"No puedo cerrar {nombre}, es un proceso del sistema"
+    try:
+        subprocess.run(
+            ["taskkill", "/f", "/im", exe],
+            capture_output=True, text=True,
+            creationflags=subprocess.CREATE_NO_WINDOW
+        )
+        return f"Cerrado {nombre}"
+    except Exception as e:
+        return f"Error al cerrar {nombre}: {e}"
+
+
+def cerrar_ventana_activa():
+    if pyautogui is None:
+        return "pyautogui no está instalado"
+    try:
+        pyautogui.hotkey("alt", "f4")
+        return "Ventana cerrada"
+    except Exception as e:
+        return f"Error al cerrar ventana: {e}"
+
+
 

@@ -7,7 +7,7 @@ import sounddevice as sd
 import json
 import queue
 
-from config import VOZ_VELOCIDAD, VOZ_VOLUMEN, VOSK_MODEL_PATH, STT_IDIOMA
+from config import VOZ_VELOCIDAD, VOZ_VOLUMEN, VOSK_MODEL_PATH, STT_IDIOMA, VAD
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 
@@ -51,6 +51,18 @@ def hablar(texto):
 RATE = 16000
 _recognizer = sr.Recognizer()
 
+def _ruido_es_anomalo(rms, noise_floor, zcr, zcr_voice_range):
+    """Filtra ruidos transitorios (golpes, puertas) vs voz real."""
+    if rms > noise_floor * 5 and zcr > zcr_voice_range[1]:
+        return True
+    return False
+
+
+def _highpass_diff(audio_float):
+    """High-pass filter usando primera diferencia (elimina DC y baja frecuencia)."""
+    return np.diff(audio_float, prepend=audio_float[0])
+
+
 def escuchar():
     raw_bytes = b""
     try:
@@ -64,57 +76,69 @@ def escuchar():
         buffer = []
         speech_detected = False
         silence_chunks = 0
-        best_rms = 0.0
         total_time = 0.0
+
+        audio_buffer = []
+        noise_floor = VAD["noise_floor_init"]
 
         CHUNK_MS = 200
         chunk_size = int(RATE * CHUNK_MS / 1000)
 
         with sd.InputStream(
-            samplerate=RATE,
-            channels=1,
-            dtype='int16',
-            callback=callback,
-            blocksize=chunk_size
+            samplerate=RATE, channels=1, dtype='int16',
+            callback=callback, blocksize=chunk_size
         ):
             while True:
                 chunk = audio_queue.get()
-                buffer.append(chunk)
+                total_time += len(chunk) / RATE
 
-                chunk_duration = len(chunk) / RATE
-                total_time += chunk_duration
+                # High-pass filter + RMS en un paso
+                chunk_float = chunk.astype(np.float32).flatten()
+                chunk_hp = _highpass_diff(chunk_float)
+                rms = float(np.sqrt(np.mean(chunk_hp ** 2)))
+                audio_buffer.append(chunk_hp)
 
-                rms = float(np.sqrt(np.mean(chunk.astype(np.float32) ** 2)))
-                if rms > best_rms:
-                    best_rms = rms
+                # Zero-crossing rate en el chunk filtrado
+                signs = np.sign(chunk_hp)
+                zcr = float(np.sum(np.abs(np.diff(signs)) > 0)) / len(chunk_hp)
 
-                threshold = max(500, best_rms * 0.15)
+                # Adaptive noise floor tracking
+                if noise_floor == 0:
+                    noise_floor = rms
+                elif rms < noise_floor:
+                    noise_floor = noise_floor * (1 - VAD["noise_alpha"]) + rms * VAD["noise_alpha"]
+                else:
+                    noise_floor = noise_floor * (1 - VAD["noise_alpha"] * 0.1) + rms * VAD["noise_alpha"] * 0.1
 
-                if rms >= threshold:
+                threshold = max(noise_floor * VAD["snr_threshold"], 300)
+
+                is_speech = rms >= threshold and not _ruido_es_anomalo(rms, noise_floor, zcr, (0.3, 0.7))
+
+                if is_speech:
                     if not speech_detected:
                         speech_detected = True
+                        audio_buffer = audio_buffer[-3:] or audio_buffer
                     silence_chunks = 0
                 else:
                     silence_chunks += 1
 
-                if speech_detected and silence_chunks * chunk_duration >= 1.0:
+                if speech_detected and silence_chunks * (CHUNK_MS / 1000) >= VAD["silence_timeout"]:
                     break
-                if total_time >= 8:
+                if total_time >= VAD["max_record"]:
                     break
-                if not speech_detected and total_time >= 2.0:
+                if not speech_detected and total_time >= VAD["initial_timeout"]:
                     return ""
 
         if not speech_detected or total_time < 0.3:
             return ""
 
-        audio = np.concatenate(buffer)
+        audio_filtered = np.concatenate(audio_buffer).astype(np.float32)
 
-        audio_float = audio.astype(np.float32)
-        peak = float(np.max(np.abs(audio_float)))
+        peak = float(np.max(np.abs(audio_filtered)))
         if peak > 0 and peak < 25000:
             gain = min(25000.0 / peak, 2.0)
-            audio_float *= gain
-        audio_norm = np.clip(audio_float, -32768, 32767).astype(np.int16)
+            audio_filtered *= gain
+        audio_norm = np.clip(audio_filtered, -32768, 32767).astype(np.int16)
         raw_bytes = audio_norm.tobytes()
 
         audio_data = sr.AudioData(raw_bytes, RATE, 2)
