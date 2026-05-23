@@ -12,7 +12,7 @@ bash
 pip install -r requirements.txt
 
 Uso
-python main.py
+python nero_ui.py
 Comandos disponibles
 
 "abrir youtube / facebook / github / etc" — abre sitios web
